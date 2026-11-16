@@ -1,0 +1,75 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build installable APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Unzip the project (any zip name)
+        run: |
+          echo "Files in repo:"
+          ls -la
+          if ls ./*.zip >/dev/null 2>&1; then
+            for z in ./*.zip; do
+              echo "Unzipping: $z"
+              unzip -q -o "$z"
+            done
+          else
+            echo "No zip found - using files as uploaded"
+          fi
+
+      - name: Find the Android project
+        id: proj
+        run: |
+          F=$(find . -name settings.gradle -not -path "./.git/*" | head -n 1)
+          if [ -z "$F" ]; then
+            echo "ERROR: settings.gradle not found. Upload neon-dialer.zip to the repo root."
+            find . -not -path "./.git/*" | head -50
+            exit 1
+          fi
+          D=$(dirname "$F")
+          echo "Project dir: $D"
+          echo "dir=$D" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Install Android build tools
+        run: sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Build debug APK
+        working-directory: ${{ steps.proj.outputs.dir }}
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: neon-dialer-apk
+          path: ${{ steps.proj.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
